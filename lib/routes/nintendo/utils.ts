@@ -1,25 +1,26 @@
 import 'dayjs/locale/zh-cn.js';
 
-import path from 'node:path';
-
 import { load } from 'cheerio';
 import dayjs from 'dayjs';
 import localizedFormat from 'dayjs/plugin/localizedFormat.js';
-import { JSDOM } from 'jsdom';
 
 import got from '@/utils/got';
 import { parseDate } from '@/utils/parse-date';
-import { art } from '@/utils/render';
+import { parseScriptData } from '@/utils/parse-script-data';
+
+import { renderEshopCnDescription } from './templates/eshop-cn';
 
 dayjs.extend(localizedFormat);
 
 function nuxtReader(data) {
-    let nuxt = {};
+    let nuxt;
     try {
-        const dom = new JSDOM(data, {
-            runScripts: 'dangerously',
-        });
-        nuxt = dom.window.__NUXT__.data[0];
+        const $ = load(data);
+        const script = $('script')
+            .toArray()
+            .map((element) => $(element).text())
+            .find((source) => /\b__NUXT__\s*=/.test(source));
+        nuxt = parseScriptData<{ data: any[] }>(script ?? '', '__NUXT__').data[0];
     } catch {
         throw new Error('Nuxt 框架信息提取失败，请报告这个问题');
     }
@@ -52,7 +53,7 @@ async function loadNews(link) {
     const $ = load(data);
     let description = $('.detail-body-container').html();
     const date = $('.topics-articleHead__date').text();
-    description = description.replaceAll('src="/topics/', 'src="https://www.nintendo.com.hk/topics/');
+    description = description!.replaceAll('src="/topics/', 'src="https://www.nintendo.com.hk/topics/');
     return {
         content: description,
         pubDate: parseDate(date, 'YYYY.M.D'),
@@ -142,7 +143,7 @@ const ProcessItemChina = (list, cache) =>
             return {
                 ...item,
                 category: [...software.supportLanguages, ...software.genre, ...software.playMode],
-                description: art(path.join(__dirname, 'templates/eshop_cn.art'), {
+                description: renderEshopCnDescription({
                     item,
                     software,
                     releaseDatetime: dayjs(software.releaseDatetime).locale('zh-cn').format('lll'),
