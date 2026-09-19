@@ -1,37 +1,34 @@
-import path from 'node:path';
-
 import type { Cheerio, CheerioAPI } from 'cheerio';
 import { load } from 'cheerio';
 import type { Element } from 'domhandler';
 import type { Context } from 'hono';
 
-import type { Data, DataItem, Route } from '@/types';
+import type { Data, DataItem, Language, Route } from '@/types';
 import { ViewType } from '@/types';
 import cache from '@/utils/cache';
 import ofetch from '@/utils/ofetch';
 import { parseRelativeDate } from '@/utils/parse-date';
-import { art } from '@/utils/render';
 import timezone from '@/utils/timezone';
 
-export const handler = async (ctx: Context): Promise<Data> => {
-    const limit: number = Number.parseInt(ctx.req.query('limit') ?? '18', 10);
+import { renderDescription } from './templates/description';
 
-    const baseUrl: string = 'https://www.dgtle.com';
+export const handler = async (ctx: Context): Promise<Data> => {
+    const limit = Number(ctx.req.query('limit') ?? '18');
+
+    const baseUrl = 'https://www.dgtle.com';
     const targetUrl: string = new URL('video', baseUrl).href;
     const apiUrl: string = new URL('video/list/1', baseUrl).href;
 
     const targetResponse = await ofetch(targetUrl);
     const $: CheerioAPI = load(targetResponse);
-    const language = $('html').attr('lang') ?? 'zh-CN';
+    const language = ($('html').attr('lang') ?? 'zh-CN') as Language;
 
     const response = await ofetch(apiUrl);
 
-    let items: DataItem[] = [];
-
-    items = response.data.list.slice(0, limit).map((item): DataItem => {
+    let items: DataItem[] = response.data.list.slice(0, limit).map((item): DataItem => {
         const title: string = item.title;
-        const image: string | undefined = item.cover?.split(/\?/)?.[0];
-        const description: string | undefined = art(path.join(__dirname, 'templates/description.art'), {
+        const image: string | undefined = item.cover?.split(/\?/, 1)?.[0];
+        const description: string | undefined = renderDescription({
             images: image
                 ? [
                       {
@@ -47,10 +44,10 @@ export const handler = async (ctx: Context): Promise<Data> => {
             {
                 name: item.author.username,
                 url: undefined,
-                avatar: item.author.avatar_path?.split(/\?/)?.[0],
+                avatar: item.author.avatar_path?.split(/\?/, 1)?.[0],
             },
         ];
-        const guid: string = `dgtle-${item.id}`;
+        const guid = `dgtle-${item.id}`;
 
         const processedItem: DataItem = {
             title,
@@ -79,7 +76,7 @@ export const handler = async (ctx: Context): Promise<Data> => {
             }
 
             return cache.tryGet(item.link, async (): Promise<DataItem> => {
-                const detailResponse = await ofetch(item.link);
+                const detailResponse = await ofetch(item.link!);
                 const $$: CheerioAPI = load(detailResponse);
 
                 const title: string = $$('h1.video-title').text();
@@ -88,7 +85,7 @@ export const handler = async (ctx: Context): Promise<Data> => {
                 const enclosureUrl: string | undefined = $$enclosureEl.attr('src');
 
                 const image: string | undefined = $$('div.video-play').attr('data-url');
-                const description: string | undefined = art(path.join(__dirname, 'templates/description.art'), {
+                const description: string | undefined = renderDescription({
                     videos: enclosureUrl
                         ? [
                               {
@@ -100,7 +97,7 @@ export const handler = async (ctx: Context): Promise<Data> => {
                         : undefined,
                     intro: $$('h3.video-summary').text(),
                 });
-                const pubDateStr: string | undefined = $$('p.video-time').text()?.split(/\s/)?.[0];
+                const pubDateStr: string | undefined = $$('p.video-time').text()?.split(/\s/, 1)?.[0];
                 const linkUrl: string | undefined = $$('.title').attr('href');
                 const categoryEls: Element[] = $$('.category').toArray();
                 const categories: string[] = [...new Set(categoryEls.map((el) => $$(el).text()).filter(Boolean))];
@@ -120,7 +117,7 @@ export const handler = async (ctx: Context): Promise<Data> => {
                 let processedItem: DataItem = {
                     title,
                     description,
-                    pubDate: pubDateStr ? timezone(parseRelativeDate(pubDateStr), +8) : item.pubDate,
+                    pubDate: pubDateStr ? timezone(parseRelativeDate(pubDateStr), 8) : item.pubDate,
                     link: linkUrl ? new URL(linkUrl, baseUrl).href : item.link,
                     category: categories,
                     author: authors,
@@ -133,7 +130,7 @@ export const handler = async (ctx: Context): Promise<Data> => {
                     },
                     image,
                     banner: image,
-                    updated: upDatedStr ? timezone(parseRelativeDate(upDatedStr), +8) : item.updated,
+                    updated: upDatedStr ? timezone(parseRelativeDate(upDatedStr), 8) : item.updated,
                     language,
                 };
 
@@ -159,10 +156,10 @@ export const handler = async (ctx: Context): Promise<Data> => {
         })
     );
 
-    const author: string | undefined = $('meta[name="keywords"]').attr('content')?.split(/,/)[0] ?? undefined;
+    const author: string | undefined = $('meta[name="keywords"]').attr('content')?.split(/,/, 1)[0] ?? undefined;
 
     return {
-        title: $('title').text().trim().split(/\s/)[0],
+        title: $('title').text().trim().split(/\s/, 1)[0],
         description: $('meta[name="description"]').attr('content'),
         link: targetUrl,
         item: items,
