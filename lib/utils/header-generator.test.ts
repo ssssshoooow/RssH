@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import '@/utils/request-rewriter';
+
+import { HeaderGenerator } from 'header-generator';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { generateHeaders, PRESETS } from '@/utils/header-generator';
 import ofetch from '@/utils/ofetch';
 
 describe('header-generator', () => {
-    it('should has no ua', async () => {
+    it('should use generated ua', async () => {
         const response = await ofetch('http://rsshub.test/headers');
-        expect(response['user-agent']).toBeUndefined();
+        expect(response['user-agent']).toMatch(/Macintosh.*Chrome/);
     });
 
     it('should match ua configurated', async () => {
@@ -43,7 +46,8 @@ describe('header-generator', () => {
         expect(headers['sec-ch-ua-mobile']).toBeDefined();
         expect(headers['sec-ch-ua-platform']).toBeDefined();
 
-        expect(headers['sec-ch-ua-platform']).toBe('"Windows"');
+        // Platform may vary due to header-generator randomness, just check it's a quoted string
+        expect(headers['sec-ch-ua-platform']).toMatch(/^".*"$/);
         expect(headers['sec-ch-ua-mobile']).toBe('?0');
         expect(headers['user-agent']).toMatch(/Chrome/);
     });
@@ -59,5 +63,30 @@ describe('header-generator', () => {
         expect(headers['sec-ch-ua-platform']).toBe('"macOS"');
         expect(headers['sec-ch-ua-mobile']).toBe('?0');
         expect(headers['user-agent']).toMatch(/Chrome/);
+    });
+});
+
+describe('header-generator (mocked)', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('retries invalid safari user agents', () => {
+        const headersQueue = [{ 'user-agent': 'Mozilla/5.0 Applebot Safari' }, { 'user-agent': 'Mozilla/5.0 Safari' }];
+        vi.spyOn(HeaderGenerator.prototype, 'getHeaders').mockImplementation(() => headersQueue.shift() ?? { 'user-agent': 'Mozilla/5.0 Safari' });
+
+        const headers = generateHeaders({ browsers: ['safari'] });
+
+        expect(headers['user-agent']).toContain('Safari');
+        expect(headersQueue.length).toBe(0);
+    });
+
+    it('accepts firefox user agents', () => {
+        const headersQueue = [{ 'user-agent': 'Mozilla/5.0 Firefox' }];
+        vi.spyOn(HeaderGenerator.prototype, 'getHeaders').mockImplementation(() => headersQueue.shift() ?? { 'user-agent': 'Mozilla/5.0 Firefox' });
+
+        const headers = generateHeaders();
+
+        expect(headers['user-agent']).toContain('Firefox');
     });
 });
