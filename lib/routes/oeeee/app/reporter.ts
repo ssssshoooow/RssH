@@ -1,10 +1,9 @@
-import path from 'node:path';
+import pMap from 'p-map';
 
-import type { Route } from '@/types';
-import cache from '@/utils/cache';
+import type { DataItem, Route } from '@/types';
 import got from '@/utils/got';
-import { art } from '@/utils/render';
 
+import { renderDescription } from '../templates/description';
 import { parseArticle } from '../utils';
 
 export const route: Route = {
@@ -23,7 +22,7 @@ export const route: Route = {
     name: '南都客户端（按记者）',
     maintainers: ['TimWu007'],
     handler,
-    description: `记者的 UID 可通过 \`m.mp.oeeee.com\` 下的文章页面获取。点击文章下方的作者头像，进入该作者的个人主页，即可从 url 中获取。`,
+    description: '记者的 UID 可通过 `m.mp.oeeee.com` 下的文章页面获取。点击文章下方的作者头像，进入该作者的个人主页，即可从 url 中获取。',
 };
 
 async function handler(ctx) {
@@ -32,9 +31,9 @@ async function handler(ctx) {
 
     const { data: response } = await got(currentUrl);
 
-    const list = response.data.list.map((item) => ({
+    const list: Array<DataItem & { link: string }> = response.data.list.map((item) => ({
         title: '【' + item.media_nickname + '】' + item.title,
-        description: art(path.join(__dirname, '../templates/description.art'), {
+        description: renderDescription({
             thumb: item.titleimg,
             description: item.summary,
         }),
@@ -43,7 +42,7 @@ async function handler(ctx) {
 
     const author = response.data.info ? response.data.info.name : '';
 
-    const items = await Promise.all(list.map((item) => parseArticle(item, cache.tryGet)));
+    const items = await pMap(list, (item) => parseArticle(item), { concurrency: 3 });
 
     return {
         title: `南方都市报奥一网 - ${author}`,
